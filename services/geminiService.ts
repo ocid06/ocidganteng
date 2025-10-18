@@ -1,20 +1,22 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// ✅ Fix: Vite environment variable harus pakai prefix VITE_
+// Pastikan di .env.local atau di Vercel ada:  VITE_GEMINI_API_KEY=AIza...
+const ai = new GoogleGenAI({
+  apiKey: import.meta.env.VITE_GEMINI_API_KEY as string,
+});
 
 /**
- * Converts a File object to a base64 encoded string with its MIME type.
- * @param file The file to convert.
- * @returns A promise that resolves to an object containing the mimeType and base64 data.
+ * Mengubah File menjadi base64 string beserta MIME type-nya.
  */
-export const fileToBase64 = (file: File): Promise<{ mimeType: string, data: string }> => {
+export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
       const result = reader.result as string;
-      const mimeType = result.split(';')[0].split(':')[1];
-      const data = result.split(',')[1];
+      const mimeType = result.split(";")[0].split(":")[1];
+      const data = result.split(",")[1];
       resolve({ mimeType, data });
     };
     reader.onerror = (error) => reject(error);
@@ -22,14 +24,12 @@ export const fileToBase64 = (file: File): Promise<{ mimeType: string, data: stri
 };
 
 /**
- * Generates an image from a text prompt.
- * @param prompt The text prompt.
- * @returns A promise that resolves to the data URL of the generated image.
+ * Generate gambar dari teks.
  */
 export const generateImageFromText = async (prompt: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: "gemini-2.5-flash-image",
       contents: {
         parts: [{ text: prompt }],
       },
@@ -44,25 +44,23 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
         return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
       }
     }
-    throw new Error('No image data found in the response.');
-  } catch (error) {
-    console.error('Error generating image from text:', error);
-    throw new Error('Failed to generate image. Please try again.');
+
+    throw new Error("No image data found in the response.");
+  } catch (error: any) {
+    console.error("Error generating image from text:", error);
+    throw new Error("Failed to generate image. Please try again.");
   }
 };
 
 /**
- * Edits an image based on a text prompt.
- * @param images An array of image objects with mimeType and base64 data.
- * @param prompt The text prompt describing the desired edits.
- * @returns A promise that resolves to the data URL of the edited image.
+ * Edit gambar berdasarkan prompt teks.
  */
 export const editImageWithPrompt = async (
   images: { mimeType: string; data: string }[],
   prompt: string
 ): Promise<string> => {
   try {
-    const imageParts = images.map(image => ({
+    const imageParts = images.map((image) => ({
       inlineData: {
         data: image.data,
         mimeType: image.mimeType,
@@ -72,7 +70,7 @@ export const editImageWithPrompt = async (
     const textPart = { text: prompt };
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: "gemini-2.5-flash-image",
       contents: {
         parts: [...imageParts, textPart],
       },
@@ -88,19 +86,15 @@ export const editImageWithPrompt = async (
       }
     }
 
-    throw new Error('No image data found in the response.');
-  } catch (error) {
-    console.error('Error editing image with prompt:', error);
-    throw new Error('Failed to edit image. Please try again.');
+    throw new Error("No image data found in the response.");
+  } catch (error: any) {
+    console.error("Error editing image with prompt:", error);
+    throw new Error("Failed to edit image. Please try again.");
   }
 };
 
-// FIX: Implement and export the missing `swapFaces` function.
 /**
- * Swaps faces between a source and a target image.
- * @param sourceImage The image containing the face to use.
- * @param targetImage The image where the face will be placed.
- * @returns A promise that resolves to the data URL of the resulting image.
+ * Swap wajah antara dua gambar.
  */
 export const swapFaces = async (
   sourceImage: { mimeType: string; data: string },
@@ -121,10 +115,12 @@ export const swapFaces = async (
       },
     };
 
-    const textPart = { text: "Take the face from the first image and swap it onto the main person in the second image. Keep the background and body of the second image." };
+    const textPart = {
+      text: "Take the face from the first image and swap it onto the main person in the second image. Keep the background and body of the second image.",
+    };
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: "gemini-2.5-flash-image",
       contents: {
         parts: [sourceImagePart, targetImagePart, textPart],
       },
@@ -140,9 +136,9 @@ export const swapFaces = async (
       }
     }
 
-    throw new Error('No image data found in the response.');
-  } catch (error) {
-    console.error('Error swapping faces:', error);
-    throw new Error('Failed to swap faces. Please try again.');
+    throw new Error("No image data found in the response.");
+  } catch (error: any) {
+    console.error("Error swapping faces:", error);
+    throw new Error("Failed to swap faces. Please try again.");
   }
 };
