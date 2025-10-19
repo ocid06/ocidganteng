@@ -1,69 +1,91 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// 1. VERIFIKASI API KEY
+// Pastikan variabel GEMINI_API_KEY sudah dimasukkan di Vercel.
+const apiKey = process.env.GEMINI_API_KEY;
+
+if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set in environment variables.");
+}
+
+const ai = new GoogleGenAI({ apiKey });
+
+// ---------------------------------------------------------------------
+// FUNGSI PENDUKUNG (Client-Side) - DIPERBAIKI AGAR BUILD BERHASIL
+// ---------------------------------------------------------------------
 
 /**
- * Converts a File object to a base64 encoded string with its MIME type.
- * @param file The file to convert.
- * @returns A promise that resolves to an object containing the mimeType and base64 data.
+ * Mengubah File menjadi base64 string beserta MIME type-nya.
+ * (Diperlukan oleh komponen ImageEdit/FaceSwap)
  */
-export const fileToBase64 = (file: File): Promise<{ mimeType: string, data: string }> => {
+export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
       const result = reader.result as string;
-      const mimeType = result.split(';')[0].split(':')[1];
-      const data = result.split(',')[1];
+      const mimeType = result.split(";")[0].split(":")[1];
+      const data = result.split(",")[1];
       resolve({ mimeType, data });
     };
     reader.onerror = (error) => reject(error);
   });
 };
 
+// ---------------------------------------------------------------------
+// FUNGSI UTAMA (Serverless) - GENERATE GAMBAR
+// ---------------------------------------------------------------------
+
 /**
- * Generates an image from a text prompt.
- * @param prompt The text prompt.
- * @returns A promise that resolves to the data URL of the generated image.
+ * Generate gambar dari teks menggunakan model GEMINI FLASH.
+ * Catatan: Model ini TIDAK dirancang untuk Text-to-Image dan kemungkinan besar
+ * akan menghasilkan error "This model only supports text output."
+ * Solusi resminya adalah menggunakan Imagen 3.0 dengan billing aktif.
  */
 export const generateImageFromText = async (prompt: string): Promise<string> => {
+  if (!prompt || prompt.trim() === "") {
+    throw new Error("Prompt is empty.");
+  }
+
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      // Menggunakan model terbaru yang seharusnya didukung di Free Tier
+      model: "gemini-2.5-flash", 
       contents: {
-        parts: [{ text: prompt }],
+        parts: [{ text: `Generate a photorealistic image based on this description: ${prompt}` }],
       },
       config: {
-        responseModalities: [Modality.IMAGE],
+        responseModalities: [Modality.IMAGE], 
       },
     });
 
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        const base64ImageBytes: string = part.inlineData.data;
-        return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
-      }
+    // Pengecekan respons
+    const candidate = response.candidates?.[0];
+    if (candidate && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+            if (part.inlineData) {
+                const base64ImageBytes: string = part.inlineData.data;
+                return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+            }
+        }
     }
-    throw new Error('No image data found in the response.');
-  } catch (error) {
-    console.error('Error generating image from text:', error);
-    throw new Error('Failed to generate image. Please try again.');
+
+    throw new Error("Gemini did not return image data, model may only support text output (Switch to Imagen 3.0 required).");
+  } catch (error: any) {
+    console.error("Error generating image from text:", error.message || error);
+    
+    // Memberikan pesan error yang lebih informatif
+    const msg = error.message || "Unknown API error";
+    if (msg.includes("404") || msg.includes("not found")) {
+        throw new Error("Model API tidak ditemukan. Harap buat API Key baru di Google AI Studio.");
+    }
+    if (msg.includes("text output")) {
+        throw new Error("Model ini hanya mendukung output teks. Aktifkan billing untuk menggunakan model Imagen.");
+    }
+    
+    throw new Error(`Failed to generate image: ${msg}`);
   }
 };
-
-/**
- * Edits an image based on a text prompt.
- * @param images An array of image objects with mimeType and base64 data.
- * @param prompt The text prompt describing the desired edits.
- * @returns A promise that resolves to the data URL of the edited image.
- */
-export const editImageWithPrompt = async (
-  images: { mimeType: string; data: string }[],
-  prompt: string
-): Promise<string> => {
-  try {
-    const imageParts = images.map(image => ({
-      inlineData: {
         data: image.data,
         mimeType: image.mimeType,
       },
