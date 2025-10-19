@@ -80,3 +80,60 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
     throw new Error(`Failed to generate image: ${error.message || "Unknown API error"}`);
   }
 };
+// services/geminiService.ts
+
+// ... (kode di atas tetap sama, termasuk generateImageFromText) ...
+
+/**
+ * Edit Gambar berdasarkan prompt teks dan gambar masukan.
+ * Menggunakan model pratinjau yang sama (free tier).
+ */
+export const editImageWithPrompt = async (
+  images: { mimeType: string; data: string }[],
+  prompt: string
+): Promise<string> => {
+  if (!prompt || prompt.trim() === "" || images.length === 0) {
+    throw new Error("Prompt dan setidaknya satu gambar diperlukan.");
+  }
+
+  try {
+    const imageParts = images.map((image) => ({
+      inlineData: {
+        data: image.data,
+        mimeType: image.mimeType,
+      },
+    }));
+
+    const textPart = { text: `Edit the provided image(s) based on this instruction: ${prompt}` };
+
+    // Menggunakan model yang sama yang berfungsi untuk generate gambar
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash-preview-image-generation", 
+      contents: {
+        parts: [...imageParts, textPart], // Mengirim gambar DAN teks
+      },
+      config: {
+        // Tetap harus meminta TEXT dan IMAGE
+        responseModalities: [Modality.TEXT, Modality.IMAGE], 
+      },
+    });
+
+    // Pengecekan respons Gemini
+    const candidate = response.candidates?.[0];
+    if (candidate && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+            // Hanya mencari bagian yang memiliki data inline (gambar)
+            if (part.inlineData) {
+                const base64ImageBytes: string = part.inlineData.data;
+                return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+            }
+        }
+    }
+
+    throw new Error("Model berhasil dipanggil, tetapi tidak mengembalikan data gambar edit.");
+  } catch (error: any) {
+    console.error("Error editing image with prompt:", error.message || error);
+    throw new Error(`Failed to edit image: ${error.message || "Unknown API error"}`);
+  }
+};
+      
