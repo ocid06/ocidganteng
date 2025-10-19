@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 
 // 1. VERIFIKASI API KEY
 // Mengambil kunci API dari Environment Variable Vercel.
@@ -11,12 +11,11 @@ if (!apiKey) {
 const ai = new GoogleGenAI({ apiKey });
 
 // ---------------------------------------------------------------------
-// FUNGSI PENDUKUNG (Client-Side) - WAJIB ADA UNTUK MENGATASI BUILD ERROR
+// FUNGSI PENDUKUNG (Client-Side) - WAJIB ADA
 // ---------------------------------------------------------------------
 
 /**
- * Mengubah File lokal menjadi base64 string beserta MIME type-nya.
- * (Diperlukan oleh komponen ImageEdit/FaceSwap di sisi client)
+ * Mengubah File menjadi base64 string.
  */
 export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: string }> => {
   return new Promise((resolve, reject) => {
@@ -33,12 +32,11 @@ export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: stri
 };
 
 // ---------------------------------------------------------------------
-// FUNGSI UTAMA (Serverless) - GENERATE GAMBAR DENGAN IMAGEN 3.0
+// FUNGSI UTAMA (Serverless) - GENERATE GAMBAR (SOLUSI GRATIS TERBAIK)
 // ---------------------------------------------------------------------
 
 /**
- * Generate gambar dari teks menggunakan model IMAGEN 3.0 (Memerlukan Billing Aktif).
- * Ini adalah satu-satunya model yang berfungsi untuk Text-to-Image Generation.
+ * Generate gambar dari teks menggunakan model Pratinjau Gambar yang Tersedia.
  */
 export const generateImageFromText = async (prompt: string): Promise<string> => {
   if (!prompt || prompt.trim() === "") {
@@ -46,43 +44,41 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
   }
 
   try {
-    // Menggunakan metode dan model yang dirancang khusus untuk Text-to-Image
-    const response = await ai.models.generateImages({
-      model: "imagen-3.0-generate", 
-      prompt: prompt,
+    // ⚠️ INI ADALAH SOLUSI TERBAIK ANDA BERDASARKAN DAFTAR MODEL YANG DIIZINKAN
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash-preview-image-generation", 
+      contents: {
+        parts: [{ text: `Generate a photorealistic image based on this description: ${prompt}` }],
+      },
       config: {
-        numberOfImages: 1,
-        outputMimeType: "image/png",
-        // Anda dapat menambahkan konfigurasi seperti aspectRatio: "16:9" di sini
+        responseModalities: [Modality.IMAGE], 
       },
     });
 
-    // Pengecekan respons Imagen
-    if (response.generatedImages && response.generatedImages.length > 0) {
-      const generatedImage = response.generatedImages[0].image;
-      const base64ImageBytes: string = generatedImage.imageBytes;
-      const mimeType: string = generatedImage.mimeType;
-
-      // Mengembalikan URL Data Base64
-      return `data:${mimeType};base64,${base64ImageBytes}`;
+    // Pengecekan respons Gemini
+    const candidate = response.candidates?.[0];
+    if (candidate && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+            if (part.inlineData) {
+                const base64ImageBytes: string = part.inlineData.data;
+                return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+            }
+        }
     }
 
-    throw new Error("No image data was successfully generated from Imagen 3.0.");
+    throw new Error("Model gagal mengembalikan data gambar. Kuota mungkin habis (10 RPM).");
   } catch (error: any) {
     console.error("Error generating image from text:", error.message || error);
     
+    // Memberikan pesan error yang lebih jelas
     const msg = error.message || "Unknown API error";
     
-    // Pesan error khusus jika masalah billing muncul lagi
-    if (msg.includes("billed users")) {
-        throw new Error("Gagal. Fitur ini memerlukan penagihan (billing) aktif. Silakan verifikasi status billing Cloud Project Anda.");
-    }
-    
-    // Pesan error khusus jika model tidak ditemukan lagi (walaupun seharusnya tidak terjadi)
+    // Jika masih 404, berarti ada masalah di SDK/API Key, meskipun model sudah benar
     if (msg.includes("404") || msg.includes("not found")) {
-        throw new Error("Model API tidak ditemukan. Harap pastikan API Key Anda terhubung ke endpoint yang benar.");
+        throw new Error("Model tidak ditemukan. Harap pastikan API Key Anda terbaru.");
     }
 
     throw new Error(`Failed to generate image: ${msg}`);
   }
 };
+        
