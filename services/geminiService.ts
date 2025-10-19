@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 // 1. VERIFIKASI API KEY
+// Mengambil kunci API dari Environment Variable Vercel.
 const apiKey = process.env.GEMINI_API_KEY;
 
 if (!apiKey) {
@@ -10,11 +11,12 @@ if (!apiKey) {
 const ai = new GoogleGenAI({ apiKey });
 
 // ---------------------------------------------------------------------
-// FUNGSI PENDUKUNG (Client-Side) - Wajib untuk komponen Anda
+// FUNGSI PENDUKUNG (Client-Side) - WAJIB ADA UNTUK MENGATASI BUILD ERROR
 // ---------------------------------------------------------------------
 
 /**
- * Mengubah File menjadi base64 string.
+ * Mengubah File lokal menjadi base64 string beserta MIME type-nya.
+ * (Diperlukan oleh komponen ImageEdit/FaceSwap di sisi client)
  */
 export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: string }> => {
   return new Promise((resolve, reject) => {
@@ -31,11 +33,12 @@ export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: stri
 };
 
 // ---------------------------------------------------------------------
-// FUNGSI UTAMA (Serverless) - GENERATE GAMBAR DENGAN IMAGEN
+// FUNGSI UTAMA (Serverless) - GENERATE GAMBAR DENGAN IMAGEN 3.0
 // ---------------------------------------------------------------------
 
 /**
  * Generate gambar dari teks menggunakan model IMAGEN 3.0 (Memerlukan Billing Aktif).
+ * Ini adalah satu-satunya model yang berfungsi untuk Text-to-Image Generation.
  */
 export const generateImageFromText = async (prompt: string): Promise<string> => {
   if (!prompt || prompt.trim() === "") {
@@ -43,13 +46,14 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
   }
 
   try {
-    // Menggunakan metode dan model yang dirancang untuk Text-to-Image
+    // Menggunakan metode dan model yang dirancang khusus untuk Text-to-Image
     const response = await ai.models.generateImages({
       model: "imagen-3.0-generate-002", 
       prompt: prompt,
       config: {
         numberOfImages: 1,
         outputMimeType: "image/png",
+        // Anda dapat menambahkan konfigurasi seperti aspectRatio: "16:9" di sini
       },
     });
 
@@ -59,19 +63,26 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
       const base64ImageBytes: string = generatedImage.imageBytes;
       const mimeType: string = generatedImage.mimeType;
 
+      // Mengembalikan URL Data Base64
       return `data:${mimeType};base64,${base64ImageBytes}`;
     }
 
-    throw new Error("No image data was successfully generated from Imagen.");
+    throw new Error("No image data was successfully generated from Imagen 3.0.");
   } catch (error: any) {
     console.error("Error generating image from text:", error.message || error);
     
-    // Memberikan pesan error yang jelas jika billing belum aktif
-    if (error.message && error.message.includes("Imagen API is only accessible to billed users")) {
-        throw new Error("Gagal. Harap aktifkan PENAGIHAN (BILLING) di Google Cloud untuk menggunakan model Imagen.");
+    const msg = error.message || "Unknown API error";
+    
+    // Pesan error khusus jika masalah billing muncul lagi
+    if (msg.includes("billed users")) {
+        throw new Error("Gagal. Fitur ini memerlukan penagihan (billing) aktif. Silakan verifikasi status billing Cloud Project Anda.");
     }
     
-    throw new Error(`Failed to generate image: ${error.message || "Unknown API error"}`);
+    // Pesan error khusus jika model tidak ditemukan lagi (walaupun seharusnya tidak terjadi)
+    if (msg.includes("404") || msg.includes("not found")) {
+        throw new Error("Model API tidak ditemukan. Harap pastikan API Key Anda terhubung ke endpoint yang benar.");
+    }
+
+    throw new Error(`Failed to generate image: ${msg}`);
   }
 };
-        
