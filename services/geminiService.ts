@@ -45,7 +45,7 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
     // ⚠️ PERBAIKAN UTAMA 2 & 3:
     // Mengganti model dan metode panggilan ke IMAGEN
     const response = await ai.models.generateImages({
-      model: "imagen-3.0-generate-002", // Model Text-to-Image
+      model: "imagen-2.0-generate-002", // Model Text-to-Image
       prompt: prompt,
       config: {
         numberOfImages: 1,
