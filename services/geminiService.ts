@@ -1,13 +1,21 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
-// ✅ Fix: Vite environment variable harus pakai prefix VITE_
-// Pastikan di .env.local atau di Vercel ada:  VITE_GEMINI_API_KEY=AIza...
-const ai = new GoogleGenAI({
-  apiKey: import.meta.env.VITE_GEMINI_API_KEY as string,
-});
+// ⚠️ PERBAIKAN UTAMA 1:
+// Gunakan process.env untuk Serverless Function di Vercel, dan pastikan
+// Environment Variable di Vercel bernama GEMINI_API_KEY (tanpa VITE_).
+const apiKey = process.env.GEMINI_API_KEY;
+
+if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set in environment variables.");
+}
+
+const ai = new GoogleGenAI({ apiKey });
+
+// --- Fungsi Pendukung (TIDAK BERUBAH) ---
 
 /**
  * Mengubah File menjadi base64 string beserta MIME type-nya.
+ * (Asumsi fungsi ini dipanggil di sisi client/browser sebelum dikirim ke API Route)
  */
 export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: string }> => {
   return new Promise((resolve, reject) => {
@@ -23,122 +31,48 @@ export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: stri
   });
 };
 
+// --- Fungsi Generate Gambar (DI-UPGRADE) ---
+
 /**
- * Generate gambar dari teks.
+ * Generate gambar dari teks menggunakan model IMAGEN 3.0.
  */
 export const generateImageFromText = async (prompt: string): Promise<string> => {
+  if (!prompt || prompt.trim() === "") {
+    throw new Error("Prompt is empty.");
+  }
+
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: {
-        parts: [{ text: prompt }],
-      },
+    // ⚠️ PERBAIKAN UTAMA 2 & 3:
+    // Mengganti model dan metode panggilan ke IMAGEN
+    const response = await ai.models.generateImages({
+      model: "imagen-3.0-generate-002", // Model Text-to-Image
+      prompt: prompt,
       config: {
-        responseModalities: [Modality.IMAGE],
+        numberOfImages: 1,
+        outputMimeType: "image/png", // PNG biasanya lebih disukai untuk kualitas
+        // Anda bisa tambahkan konfigurasi lain seperti aspectRatio: "1:1"
       },
     });
 
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        const base64ImageBytes: string = part.inlineData.data;
-        return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
-      }
+    // Pengecekan respons IMAGEN
+    if (response.generatedImages && response.generatedImages.length > 0) {
+      const generatedImage = response.generatedImages[0].image;
+      const base64ImageBytes: string = generatedImage.imageBytes;
+      const mimeType: string = generatedImage.mimeType;
+
+      // Mengembalikan URL Data Base64 untuk ditampilkan di browser
+      return `data:${mimeType};base64,${base64ImageBytes}`;
     }
 
-    throw new Error("No image data found in the response.");
+    throw new Error("No image data was successfully generated or found in the response.");
   } catch (error: any) {
-    console.error("Error generating image from text:", error);
-    throw new Error("Failed to generate image. Please try again.");
+    console.error("Error generating image from text:", error.message || error);
+    // Kembalikan pesan error yang lebih informatif dari sistem jika memungkinkan
+    throw new Error(`Failed to generate image: ${error.message || "Unknown API error"}`);
   }
 };
 
-/**
- * Edit gambar berdasarkan prompt teks.
- */
-export const editImageWithPrompt = async (
-  images: { mimeType: string; data: string }[],
-  prompt: string
-): Promise<string> => {
-  try {
-    const imageParts = images.map((image) => ({
-      inlineData: {
-        data: image.data,
-        mimeType: image.mimeType,
-      },
-    }));
-
-    const textPart = { text: prompt };
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: {
-        parts: [...imageParts, textPart],
-      },
-      config: {
-        responseModalities: [Modality.IMAGE],
-      },
-    });
-
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        const base64ImageBytes: string = part.inlineData.data;
-        return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
-      }
-    }
-
-    throw new Error("No image data found in the response.");
-  } catch (error: any) {
-    console.error("Error editing image with prompt:", error);
-    throw new Error("Failed to edit image. Please try again.");
-  }
-};
-
-/**
- * Swap wajah antara dua gambar.
- */
-export const swapFaces = async (
-  sourceImage: { mimeType: string; data: string },
-  targetImage: { mimeType: string; data: string }
-): Promise<string> => {
-  try {
-    const sourceImagePart = {
-      inlineData: {
-        data: sourceImage.data,
-        mimeType: sourceImage.mimeType,
-      },
-    };
-
-    const targetImagePart = {
-      inlineData: {
-        data: targetImage.data,
-        mimeType: targetImage.mimeType,
-      },
-    };
-
-    const textPart = {
-      text: "Take the face from the first image and swap it onto the main person in the second image. Keep the background and body of the second image.",
-    };
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: {
-        parts: [sourceImagePart, targetImagePart, textPart],
-      },
-      config: {
-        responseModalities: [Modality.IMAGE],
-      },
-    });
-
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        const base64ImageBytes: string = part.inlineData.data;
-        return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
-      }
-    }
-
-    throw new Error("No image data found in the response.");
-  } catch (error: any) {
-    console.error("Error swapping faces:", error);
-    throw new Error("Failed to swap faces. Please try again.");
-  }
-};
+// Catatan: Fungsi `editImageWithPrompt` dan `swapFaces` yang lama
+// telah dihapus karena memerlukan API dan model Imagen yang berbeda 
+// dan di luar cakupan generateImages sederhana.
+      
