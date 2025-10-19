@@ -47,7 +47,7 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", 
+      model: "imagen-3.0-generate-002", 
       contents: {
         // Menginstruksikan AI untuk menghasilkan gambar yang realistis
         parts: [{ text: `Based on the following request, generate and return only the photorealistic image data: ${prompt}` }],
