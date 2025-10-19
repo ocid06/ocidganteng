@@ -32,7 +32,7 @@ export const fileToBase64 = (file: File): Promise<{ mimeType: string; data: stri
 };
 
 // ---------------------------------------------------------------------
-// FUNGSI UTAMA (Serverless) - GENERATE GAMBAR (SOLUSI GRATIS TERBAIK)
+// FUNGSI UTAMA (Serverless) - GENERATE GAMBAR (FINAL SOLUTION)
 // ---------------------------------------------------------------------
 
 /**
@@ -44,21 +44,23 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
   }
 
   try {
-    // ⚠️ INI ADALAH SOLUSI TERBAIK ANDA BERDASARKAN DAFTAR MODEL YANG DIIZINKAN
+    // Menggunakan model Gambar Pratinjau yang ada di daftar model Anda
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash-preview-image-generation", 
       contents: {
-        parts: [{ text: `Generate a photorealistic image based on this description: ${prompt}` }],
+        parts: [{ text: `Generate a high-quality, photorealistic image based on this description: ${prompt}` }],
       },
       config: {
-        responseModalities: [Modality.IMAGE], 
+        // ⚠️ PERBAIKAN: Harus meminta TEXT dan IMAGE secara bersamaan
+        responseModalities: [Modality.TEXT, Modality.IMAGE], 
       },
     });
 
-    // Pengecekan respons Gemini
+    // Pengecekan respons Gemini untuk mencari data gambar
     const candidate = response.candidates?.[0];
     if (candidate && candidate.content.parts) {
         for (const part of candidate.content.parts) {
+            // Kita hanya mencari bagian yang memiliki data inline (gambar)
             if (part.inlineData) {
                 const base64ImageBytes: string = part.inlineData.data;
                 return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
@@ -66,19 +68,15 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
         }
     }
 
-    throw new Error("Model gagal mengembalikan data gambar. Kuota mungkin habis (10 RPM).");
+    throw new Error("Model berhasil dipanggil, tetapi tidak mengembalikan data gambar. Kuota mungkin habis.");
   } catch (error: any) {
     console.error("Error generating image from text:", error.message || error);
     
-    // Memberikan pesan error yang lebih jelas
-    const msg = error.message || "Unknown API error";
-    
-    // Jika masih 404, berarti ada masalah di SDK/API Key, meskipun model sudah benar
-    if (msg.includes("404") || msg.includes("not found")) {
-        throw new Error("Model tidak ditemukan. Harap pastikan API Key Anda terbaru.");
+    // Pesan khusus jika kuota habis (10 RPM yang tertera di screenshot)
+    if (error.message && error.message.includes("quota")) {
+        throw new Error("Gagal: Kuota generate gambar (10 RPM) mungkin habis. Silakan coba lagi nanti.");
     }
 
-    throw new Error(`Failed to generate image: ${msg}`);
+    throw new Error(`Failed to generate image: ${error.message || "Unknown API error"}`);
   }
 };
-        
