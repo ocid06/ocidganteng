@@ -48,7 +48,7 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
   try {
     // Menggunakan metode dan model yang dirancang khusus untuk Text-to-Image
     const response = await ai.models.generateImages({
-      model: "imagen-3.0-generate-002", 
+      model: "gemini-1.5-flash", 
       prompt: prompt,
       config: {
         numberOfImages: 1,
