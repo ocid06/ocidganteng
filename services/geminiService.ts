@@ -1,57 +1,147 @@
-// services/geminiService.ts
+import { GoogleGenAI, Modality } from "@google/genai";
 
-// ... (kode di atas tetap sama, termasuk inisialisasi const ai) ...
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Generate gambar dari teks menggunakan model IMAGEN 3.0 (Memerlukan Billing Aktif).
- * Ini adalah satu-satunya model yang dirancang untuk Text-to-Image.
+ * Converts a File object to a base64 encoded string with its MIME type.
+ * @param file The file to convert.
+ * @returns A promise that resolves to an object containing the mimeType and base64 data.
+ */
+export const fileToBase64 = (file: File): Promise<{ mimeType: string, data: string }> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const result = reader.result as string;
+      const mimeType = result.split(';')[0].split(':')[1];
+      const data = result.split(',')[1];
+      resolve({ mimeType, data });
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
+
+/**
+ * Generates an image from a text prompt.
+ * @param prompt The text prompt.
+ * @returns A promise that resolves to the data URL of the generated image.
  */
 export const generateImageFromText = async (prompt: string): Promise<string> => {
-  if (!prompt || prompt.trim() === "") {
-    throw new Error("Prompt is empty.");
-  }
-
   try {
-    // ⚠️ PERBAIKAN: Menggunakan metode Imagen yang benar dan model spesifik
-    const response = await ai.models.generateImages({
-      // Menggunakan model Imagen 3.0
-      model: "imagen-3.0-generate-002", 
-      prompt: prompt,
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [{ text: prompt }],
+      },
       config: {
-        numberOfImages: 1,
-        outputMimeType: "image/png",
-        // Anda mungkin perlu menambahkan aspectRatio atau parameter lain di sini
+        responseModalities: [Modality.IMAGE],
       },
     });
 
-    // Pengecekan respons IMAGEN (bukan respons Gemini)
-    if (response.generatedImages && response.generatedImages.length > 0) {
-      const generatedImage = response.generatedImages[0].image;
-      const base64ImageBytes: string = generatedImage.imageBytes;
-      const mimeType: string = generatedImage.mimeType;
-
-      return `data:${mimeType};base64,${base64ImageBytes}`;
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        const base64ImageBytes: string = part.inlineData.data;
+        return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+      }
     }
-
-    throw new Error("No image data was successfully generated or found from Imagen.");
-  } catch (error: any) {
-    console.error("Error generating image from text:", error.message || error);
-    
-    // Memberikan pesan error yang lebih jelas jika itu adalah masalah Billing/Model
-    if (error.message && error.message.includes("400") || error.message.includes("Imagen API is only accessible to billed users")) {
-        throw new Error("Gagal generate gambar. Fitur ini memerlukan aktivasi penagihan (billing) di Google Cloud untuk model Imagen.");
-    }
-    
-    throw new Error(`Failed to generate image: ${error.message || "Unknown API error"}`);
-  }
-};
-  } catch (error: any) {
-    console.error("Error generating image from text:", error.message || error);
-    // Jika masih 404, masalah ada pada konfigurasi SDK/API Key, BUKAN kode ini.
-    throw new Error(`Failed to generate image: ${error.message || "Unknown API error"}`);
+    throw new Error('No image data found in the response.');
+  } catch (error) {
+    console.error('Error generating image from text:', error);
+    throw new Error('Failed to generate image. Please try again.');
   }
 };
 
-// Catatan: Fungsi `editImageWithPrompt` dan `swapFaces` tetap dihapus 
-// karena menyebabkan masalah build dan memerlukan model/endpoint yang berbeda.
-  
+/**
+ * Edits an image based on a text prompt.
+ * @param images An array of image objects with mimeType and base64 data.
+ * @param prompt The text prompt describing the desired edits.
+ * @returns A promise that resolves to the data URL of the edited image.
+ */
+export const editImageWithPrompt = async (
+  images: { mimeType: string; data: string }[],
+  prompt: string
+): Promise<string> => {
+  try {
+    const imageParts = images.map(image => ({
+      inlineData: {
+        data: image.data,
+        mimeType: image.mimeType,
+      },
+    }));
+
+    const textPart = { text: prompt };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [...imageParts, textPart],
+      },
+      config: {
+        responseModalities: [Modality.IMAGE],
+      },
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        const base64ImageBytes: string = part.inlineData.data;
+        return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+      }
+    }
+
+    throw new Error('No image data found in the response.');
+  } catch (error) {
+    console.error('Error editing image with prompt:', error);
+    throw new Error('Failed to edit image. Please try again.');
+  }
+};
+
+/**
+ * Swaps faces between a source and a target image.
+ * @param sourceImage The image containing the face to use.
+ * @param targetImage The image where the face will be placed.
+ * @returns A promise that resolves to the data URL of the resulting image.
+ */
+export const swapFaces = async (
+  sourceImage: { mimeType: string; data: string },
+  targetImage: { mimeType: string; data: string }
+): Promise<string> => {
+  try {
+    const sourceImagePart = {
+      inlineData: {
+        data: sourceImage.data,
+        mimeType: sourceImage.mimeType,
+      },
+    };
+
+    const targetImagePart = {
+      inlineData: {
+        data: targetImage.data,
+        mimeType: targetImage.mimeType,
+      },
+    };
+
+    const textPart = { text: "Take the face from the first image and swap it onto the main person in the second image. Keep the background and body of the second image." };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [sourceImagePart, targetImagePart, textPart],
+      },
+      config: {
+        responseModalities: [Modality.IMAGE],
+      },
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        const base64ImageBytes: string = part.inlineData.data;
+        return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+      }
+    }
+
+    throw new Error('No image data found in the response.');
+  } catch (error) {
+    console.error('Error swapping faces:', error);
+    throw new Error('Failed to swap faces. Please try again.');
+  }
+};
