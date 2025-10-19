@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { fileToBase64, swapFaces } from '../services/geminiService';
+// PERBAIKAN: Menghapus 'swapFaces' karena sudah dihapus dari geminiService.ts
+import { fileToBase64 } from '../services/geminiService'; 
 import { useImageGeneration } from '../hooks/useImageGeneration';
 import ImageInput from './ImageInput';
 import GeneratedImage from './GeneratedImage';
@@ -10,16 +11,23 @@ interface SwapParams {
   targetImage: { mimeType: string; data: string };
 }
 
-// FIX: Create a wrapper function to adapt the swapFaces service method to the useImageGeneration hook's expected signature.
-const swapFacesApi = (params: SwapParams) => swapFaces(params.sourceImage, params.targetImage);
+// FUNGSI DUMMY SEMENTARA: Menggantikan swapFaces. Ini akan membuat build berhasil
+// tetapi akan memberikan error yang jelas di UI jika pengguna mencoba fitur ini.
+const swapFacesApi = async (params: SwapParams): Promise<string> => {
+    console.warn("Fungsi swap wajah sementara dinonaktifkan untuk memperbaiki build.");
+    // Melemparkan error yang akan ditangkap oleh useImageGeneration hook
+    throw new Error("Fitur Tukar Wajah sementara tidak tersedia (Dinonaktifkan). Silakan gunakan fitur Generate Gambar.");
+};
 
 const FaceSwap: React.FC = () => {
   const [sourceImageFile, setSourceImageFile] = useState<File[]>([]);
   const [targetImageFile, setTargetImageFile] = useState<File[]>([]);
   
+  // Menggunakan fungsi dummy di atas (swapFacesApi)
   const [generate, { isLoading, error, imageUrl }] = useImageGeneration(
     swapFacesApi,
-    'Gagal menukar wajah. Silakan coba lagi.'
+    // Pesan error ini sekarang akan ditampilkan jika fungsi dummy dipanggil.
+    'Gagal menukar wajah. Fitur dinonaktifkan sementara.' 
   );
 
   const handleSourceChange = (files: File[]) => {
@@ -34,18 +42,23 @@ const FaceSwap: React.FC = () => {
     e.preventDefault();
     if (sourceImageFile.length === 0 || targetImageFile.length === 0 || isLoading) return;
 
+    // fileToBase64 tetap aman karena diekspor di geminiService.ts
     const sourceImage = await fileToBase64(sourceImageFile[0]);
     const targetImage = await fileToBase64(targetImageFile[0]);
 
+    // Panggil fungsi dummy (swapFacesApi)
     generate({ sourceImage, targetImage });
   };
 
-  const canSubmit = sourceImageFile.length > 0 && targetImageFile.length > 0 && !isLoading;
+  // Kita set canSubmit selalu false agar tombol tidak bisa diklik
+  const canSubmit = false; 
 
   return (
     <div className="flex flex-col items-center">
-      <h2 className="text-2xl font-bold text-light-text mb-2">Tukar Wajah</h2>
-      <p className="text-medium-text mb-6 text-center">Unggah gambar sumber (wajah yang akan digunakan) dan gambar target.</p>
+      <h2 className="text-2xl font-bold text-light-text mb-2">Tukar Wajah (Dinonaktifkan)</h2>
+      <p className="text-medium-text mb-6 text-center">
+        Fitur ini dinonaktifkan sementara. Silakan beralih ke fitur **Generate Gambar**.
+      </p>
       <form onSubmit={handleSubmit} className="w-full max-w-lg">
         <div className="flex flex-col gap-6">
           <ImageInput 
@@ -60,11 +73,11 @@ const FaceSwap: React.FC = () => {
           />
           <button
             type="submit"
-            disabled={!canSubmit}
-            className="w-full flex justify-center items-center gap-2 bg-gradient-to-r from-brand-light-purple to-brand-purple text-white font-bold py-3 px-4 rounded-lg hover:opacity-90 transition-all duration-300 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105"
+            // Tombol dinonaktifkan total agar tidak ada panggilan ke fungsi dummy
+            disabled={true} 
+            className="w-full flex justify-center items-center gap-2 bg-gray-500 text-white font-bold py-3 px-4 rounded-lg cursor-not-allowed"
           >
-            {isLoading && <Spinner />}
-            {isLoading ? 'Menukar...' : 'Tukar Wajah'}
+            Fitur Dinonaktifkan
           </button>
         </div>
       </form>
@@ -75,3 +88,4 @@ const FaceSwap: React.FC = () => {
 };
 
 export default FaceSwap;
+    
